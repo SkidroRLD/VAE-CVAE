@@ -344,7 +344,7 @@ def main():
 
 
     # TODO: Set up KL Annealing
-    kl_annealing = [0, 0.01, 0.05, 0.1, 0.5, 1]      # KL Annealing
+    kl_annealing = [0, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4]      # KL Annealing
 
 
     # -----
@@ -432,9 +432,9 @@ def main():
         output,mean_coding,log_var_coding, _ = model(x, y)
         loss1 = l2loss(output, x)
         loss2 = bceloss(output, x)
-        loss3 = ssimloss(output, x)
+        loss3 = 1 - ssimloss(output, x)
         loss4 = klloss(mean_coding, log_var_coding)
-        rcloss = loss1 + loss2 + (1 - loss3)
+        rcloss = loss1 + loss2 + loss3
         tloss = rcloss + loss4
         tloss.backward()
         optimizer.step()
@@ -476,11 +476,11 @@ def main():
                 y = y.cuda()
             # Train step
             model.train()
-            loss, recon_loss, bce_loss, ssim_loss, kldiv_loss = train_step(x, y)
+            l2_loss, recon_loss, bce_loss, ssim_loss, kldiv_loss = train_step(x, y)
             total_loss_train += recon_loss * x.shape[0]
             # Print
             if i % print_every == 0:
-                print("Epoch {}, Iter {}: Total Loss: {:.6f} MSE: {:.6f}, SSIM: {:.6f}, BCE: {:.6f}, KLDiv: {:.6f}".format(epoch, i, loss, recon_loss, ssim_loss, bce_loss, kldiv_loss))
+                print("Epoch {}, Iter {}: Total Loss: {:.6f} MSE: {:.6f}, SSIM: {:.6f}, BCE: {:.6f}, KLDiv: {:.6f}".format(epoch, i, recon_loss + kldiv_loss, l2_loss, ssim_loss, bce_loss, kldiv_loss))
 
         total_losses_train.append(total_loss_train.cpu() / len(train_dataset))
 
@@ -494,6 +494,12 @@ def main():
 
 
             with torch.no_grad():
+                l_2loss = 0
+                r_econloss = 0
+                s_simloss = 0
+                b_celoss = 0
+                k_lloss = 0
+                t_otalloss = 0
                 for x, y in test_loader:
                     if torch.cuda.is_available():
                         x = x.cuda()
@@ -502,17 +508,22 @@ def main():
                     output,mean_coding,log_var_coding, _ = model(x, y)
                     loss1 = l2loss(output, x)
                     loss2 = bceloss(output, x)
-                    loss3 = ssimloss(output, x)
+                    loss3 = 1 - ssimloss(output, x)
                     loss4 = klloss(mean_coding, log_var_coding)
-                    rcloss = loss1 + loss2 + (1 - loss3)
-                    l2_losses.append(loss1.cpu())
-                    bce_losses.append(loss2.cpu())
-                    ssim_losses.append(loss3.cpu())
-                    kld_losses.append(loss4.cpu())
-                    total_losses.append(rcloss.cpu())
-
+                    rcloss = loss1 + loss2 + loss3
+                    l_2loss += loss1.cpu()
+                    b_celoss += loss2.cpu()
+                    s_simloss += loss3.cpu()
+                    k_lloss += loss4.cpu()
+                    r_econloss += rcloss.cpu()
+                    t_otalloss += rcloss.cpu() + loss4.cpu() 
                     # TODO: Accumulate average reconstruction losses per batch individually for plotting
-                avg_total_recon_loss_test = np.mean(np.asarray(total_losses))
+                l2_losses.append(l_2loss)
+                bce_losses.append(b_celoss)
+                ssim_losses.append(s_simloss)
+                kld_losses.append(k_lloss)
+                total_losses.append(t_otalloss)
+                avg_total_recon_loss_test = r_econloss / (len(test_dataset)/batch_size)
 
 
 
@@ -583,7 +594,7 @@ def main():
         # #####
         # KL Annealing
         # Adjust scalar for KL Divergence loss
-        klloss.lambd = kl_annealing[math.floor(epoch/num_epochs)]
+        klloss.lambd = kl_annealing[math.floor(epoch/10)]
 
         print("Lambda:", klloss.lambd)
         
