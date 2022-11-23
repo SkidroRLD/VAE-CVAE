@@ -9,7 +9,7 @@ NOTE: Write Down Your Info below:
 
     CCID: srathore
 
-    Average Reconstruction Loss per Sample over Cifar10 Test Set:
+    Average Reconstruction Loss per Sample over Cifar10 Test Set: VAE - 0.74802392578125 CVAE -  
 
 
 """
@@ -22,7 +22,7 @@ import torch.optim as optim
 import torch.utils.data
 import torchvision
 import torchvision.datasets as dset
-import torchvision.transforms as transforms
+import torchvision.transforms as transforms 
 import torchvision.utils
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,8 +32,7 @@ from ssim import SSIM
 
 def main():
     # torch.backends.cudnn.enabled = False
-
-    device = torch.device("cpu")
+    device = ("cuda:0" if torch.cuda.is_available() else "cpu")
 
     def compute_score(loss, min_thres, max_thres):
         if loss <= min_thres:
@@ -69,26 +68,33 @@ def main():
             # #####
             self.conv1 = nn.Sequential(
                 nn.Conv2d(self.in_channels, 4, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(4),
                 nn.ReLU(),
                 nn.Conv2d(4, 8, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(8),
                 nn.ReLU() 
             )
 
             self.conv2 = nn.Sequential(
                 nn.MaxPool2d(2),
                 nn.Conv2d(8, 12, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(12),
                 nn.ReLU(),
                 nn.Conv2d(12, 16, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(16),
                 nn.ReLU() 
             )
 
             self.conv3 = nn.Sequential(
                 nn.MaxPool2d(2),
                 nn.Conv2d(16, 22, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(22),
                 nn.ReLU(),
                 nn.Conv2d(22, 28, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(28),
                 nn.ReLU(),
                 nn.Conv2d(28, 32, kernel_size = 2),
+                nn.BatchNorm2d(32),
                 nn.ReLU() 
             )
         
@@ -131,25 +137,32 @@ def main():
 
             self.upconv1 = nn.Sequential(
                 nn.Conv2d(32, 28, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(28),
                 nn.ReLU(),
                 nn.Conv2d(28, 22, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(22),
                 nn.ReLU(),
                 nn.Conv2d(22, 16, kernel_size = 2, padding = 1),
+                nn.BatchNorm2d(16),
                 nn.ReLU()
             )
             
             self.upconv2 = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
                 nn.Conv2d(16, 12, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(12),
                 nn.ReLU(),
                 nn.Conv2d(12, 8, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(8),
                 nn.ReLU()
             )
             self.upconv3 = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-                nn.Conv2d(8, 4, kernel_size = 3, padding = 1),
+                nn.Conv2d(8, 4, kernel_size = 3, padding = 1), 
+                nn.BatchNorm2d(4),
                 nn.ReLU(),
                 nn.Conv2d(4, out_channels=self.out_channels, kernel_size = 3, padding = 1),
+                nn.BatchNorm2d(self.out_channels),
                 nn.Sigmoid()
             )
 
@@ -157,6 +170,9 @@ def main():
             # #####
             # TODO: Complete the decoder architecture to reconstruct image xg from latent vector z
             # #####
+            if torch.cuda.is_available():
+                z = z.cuda()
+            
             z = self.para_linear(z)
 
             x = torch.reshape(z, (z.shape[0],32, 7, 7))
@@ -192,7 +208,7 @@ def main():
             z = eps * std + mu
             return z
 
-        def forward(self, x, y):
+        def forward(self, x, y = None):
             # #####
             # TODO: Complete forward for VAE
             # #####
@@ -222,8 +238,8 @@ def main():
                 None: a placeholder simply.
             """
             z = torch.randn(n_samples, self.latent_dim)
-            x = self.decode(z)
-            return self.forward(x), None
+            x = self.decode(z)  
+            return self.forward(x)[0], None
 
 
     # #####
@@ -246,7 +262,12 @@ def main():
             # TODO: Insert additional layers here to encode class information
             # Feel free to change parameters for encoder and decoder to suit your strategy
             # #####
+
+            self.encode_class = nn.Linear(self.num_classes, self.img_size * self.img_size)
+            self.encode_data = nn.Conv2d(3, 3, kernel_size=1)
+
             self.encode = Encoder(latent_dim=latent_dim, in_channels=3)
+            self.cat_layer = nn.Linear(self.latent_dim + self.num_classes, self.latent_dim)
             self.decode = Decoder(latent_dim=latent_dim)
 
 
@@ -271,7 +292,16 @@ def main():
                 mu, log_var: mean and log(std) of z ~ N(mu, sigma^2)
                 z: latent vector, z = mu + sigma * eps, acquired from reparameterization trick. 
             """
-            raise NotImplementedError
+            enc_class = self.encode_class(y)
+            enc_class = enc_class.view(-1, self.image_size, self.image_size).unsqueeze(1)
+            enc_data = self.encode_class(x)
+
+            x = torch.cat([enc_data, enc_class], dim = 1)
+            mu, log_var = self.encode(x)
+            z = self.reparameterize(mu, log_var)
+
+            xg = self.decode(z)
+            return xg, mu, log_var, z
 
 
         def generate(
@@ -289,8 +319,12 @@ def main():
                 xg: reconstructed image
                 y: classes for xg. 
             """
-            raise NotImplementedError
-            return xg, y
+            z = torch.randn(n_samples, self.latent_dim)
+            z = z.to(device)
+
+            z = torch.cat([z, y], dim = 1)
+            xg = self.decode(z)
+            return self.forward(xg)[0], y
 
 
     # #####
@@ -325,11 +359,11 @@ def main():
     workers = 2
     latent_dim = 128
     lr = 0.0005
-    num_epochs = 60
+    num_epochs = 50
     validate_every = 1
     print_every = 100
 
-    conditional = False     # Flag to use VAE or CVAE
+    conditional = True     # Flag to use VAE or CVAE
 
     if conditional:
         name = "cvae"
@@ -428,15 +462,15 @@ def main():
     # #####
 
     def train_step(x, y): #remember to document
-        optimizer.zero_grad()
-        output,mean_coding,log_var_coding, _ = model(x, y)
-        loss1 = l2loss(output, x)
-        loss2 = bceloss(output, x)
-        loss3 = 1 - ssimloss(output, x)
-        loss4 = klloss(mean_coding, log_var_coding)
-        rcloss = loss1 + loss2 + loss3
-        tloss = rcloss + loss4
-        tloss.backward()
+        optimizer.zero_grad() #setting optimizer gradient to zero to compute new gradients for backwards
+        output,mean_coding,log_var_coding, _ = model(x, y) # run image and classes in case of cvae to get respective output
+        loss1 = l2loss(output, x) #l2loss
+        loss2 = bceloss(output, x) #bceloss
+        loss3 = 1 - ssimloss(output, x) #ssimloss
+        loss4 = klloss(mean_coding, log_var_coding) #kldivloss
+        rcloss = loss1 + loss2 + loss3 #recon loss calculated
+        tloss = rcloss + loss4 #total loss inclusive of all losses
+        tloss.backward() #backwards to change the respective weights 
         optimizer.step()
         return loss1, rcloss, loss2, loss3, loss4
 
@@ -450,11 +484,11 @@ def main():
         # #####
         # TODO: Complete denormalization.
         # #####
-        x = x.permute(0, 2, 3, 1)
+        x = torch.permute(x ,(0, 2, 3, 1))
         if device == "cuda:0":
-            x = x.cpu().numpy()
+            x = x.detach().cpu().numpy()
         else:
-            x = x.cpu().numpy()
+            x = x.detach().cpu().numpy()
         x = x * 255
         x_denormalized = x.round().astype(np.uint8)
         return x_denormalized
@@ -482,7 +516,7 @@ def main():
             if i % print_every == 0:
                 print("Epoch {}, Iter {}: Total Loss: {:.6f} MSE: {:.6f}, SSIM: {:.6f}, BCE: {:.6f}, KLDiv: {:.6f}".format(epoch, i, recon_loss + kldiv_loss, l2_loss, ssim_loss, bce_loss, kldiv_loss))
 
-        total_losses_train.append(total_loss_train.cpu() / len(train_dataset))
+        total_losses_train.append(total_loss_train.cpu().item() / len(train_dataset))
 
         # Test loop
         if epoch % validate_every == 0:
@@ -506,11 +540,12 @@ def main():
                         y = y.cuda()
 
                     output,mean_coding,log_var_coding, _ = model(x, y)
-                    loss1 = l2loss(output, x)
-                    loss2 = bceloss(output, x)
-                    loss3 = 1 - ssimloss(output, x)
-                    loss4 = klloss(mean_coding, log_var_coding)
+                    loss1 = l2loss(output, x) * x.shape[0]
+                    loss2 = bceloss(output, x) * x.shape[0]
+                    loss3 = (1 - ssimloss(output, x)) * x.shape[0]
+                    loss4 = klloss(mean_coding, log_var_coding) * x.shape[0]
                     rcloss = loss1 + loss2 + loss3
+                    # adding all the losses in order to get a net total loss for graphing
                     l_2loss += loss1.cpu()
                     b_celoss += loss2.cpu()
                     s_simloss += loss3.cpu()
@@ -518,12 +553,13 @@ def main():
                     r_econloss += rcloss.cpu()
                     t_otalloss += rcloss.cpu() + loss4.cpu() 
                     # TODO: Accumulate average reconstruction losses per batch individually for plotting
-                l2_losses.append(l_2loss)
-                bce_losses.append(b_celoss)
-                ssim_losses.append(s_simloss)
-                kld_losses.append(k_lloss)
-                total_losses.append(t_otalloss)
-                avg_total_recon_loss_test = r_econloss / (len(test_dataset)/batch_size)
+                # dividing by the length of test/validation dataset to get my losses
+                l2_losses.append(l_2loss.item()/ len(test_dataset))
+                bce_losses.append(b_celoss.item()/ len(test_dataset))
+                ssim_losses.append(s_simloss.item()/ len(test_dataset))
+                kld_losses.append(k_lloss.item()/ len(test_dataset))
+                total_losses.append(t_otalloss.item()/ len(test_dataset))
+                avg_total_recon_loss_test = r_econloss.item() / (len(test_dataset))
 
 
 
@@ -633,9 +669,9 @@ def main():
     plt.close('all')
 
     if conditional:
-        min_val, max_val = 0.73, 0.76
+        min_val, max_val = 0.92, 1
     else:
-        min_val, max_val = 0.69, 0.72
+        min_val, max_val = 0.92, 1
 
     print("Total reconstruction loss:", best_total_loss)
     score = compute_score(best_total_loss, min_val, max_val)
