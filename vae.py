@@ -262,11 +262,9 @@ def main():
             # TODO: Insert additional layers here to encode class information
             # Feel free to change parameters for encoder and decoder to suit your strategy
             # #####
+            self.encode_layer = nn.Linear(self.num_classes, self.img_size * self.img_size)
 
-            self.encode_class = nn.Linear(self.num_classes, self.img_size * self.img_size)
-            self.encode_data = nn.Conv2d(3, 3, kernel_size=1)
-
-            self.encode = Encoder(latent_dim=latent_dim, in_channels=3)
+            self.encode = Encoder(latent_dim=latent_dim, in_channels=4)
             self.cat_layer = nn.Linear(self.latent_dim + self.num_classes, self.latent_dim)
             self.decode = Decoder(latent_dim=latent_dim)
 
@@ -292,14 +290,15 @@ def main():
                 mu, log_var: mean and log(std) of z ~ N(mu, sigma^2)
                 z: latent vector, z = mu + sigma * eps, acquired from reparameterization trick. 
             """
-            enc_class = self.encode_class(y)
-            enc_class = enc_class.view(-1, self.image_size, self.image_size).unsqueeze(1)
-            enc_data = self.encode_class(x)
 
-            x = torch.cat([enc_data, enc_class], dim = 1)
+            enc_classes = F.one_hot(y, num_classes = self.num_classes)
+            emb_classes = self.encode_layer(enc_classes.float())
+            emb_classes = emb_classes.view(-1, 1, self.img_size, self.img_size)
+            x = torch.cat([x, emb_classes], dim = 1)
             mu, log_var = self.encode(x)
             z = self.reparameterize(mu, log_var)
-
+            z = torch.cat([z, enc_classes], dim = 1)
+            z = self.cat_layer(z)
             xg = self.decode(z)
             return xg, mu, log_var, z
 
@@ -319,10 +318,13 @@ def main():
                 xg: reconstructed image
                 y: classes for xg. 
             """
+            if y is None:
+                y = torch.randint(low = 0, high = self.num_classes, size = (1,n_samples))
             z = torch.randn(n_samples, self.latent_dim)
             z = z.to(device)
-
+            y = F.one_hot(y, num_classes = self.num_classes).to(device)
             z = torch.cat([z, y], dim = 1)
+            z = self.cat_layer(z)
             xg = self.decode(z)
             return self.forward(xg)[0], y
 
