@@ -1,18 +1,3 @@
-"""Assignment 9
-Part 1: Variational Autoencoder + Conditional Variational Autoencoder
-
-NOTE: Feel free to check: https://arxiv.org/pdf/1512.09300.pdf
-
-NOTE: Write Down Your Info below:
-
-    Name: Shivam Rathore
-
-    CCID: srathore
-
-    Average Reconstruction Loss per Sample over Cifar10 Test Set: VAE - 0.74802392578125 CVAE -  
-
-
-"""
 import os
 
 import torch
@@ -44,12 +29,6 @@ def main():
                         * 100
         return base_score
 
-    # -----
-    # VAE Build Blocks
-
-    # #####
-    # TODO: Complete the encoder architecture
-    # #####
 
     class Encoder(nn.Module):
         def __init__(
@@ -61,11 +40,7 @@ def main():
             self.latent_dim = latent_dim
             self.in_channels = in_channels
             
-            # #####
-            # TODO: Complete the encoder architecture to calculate mu and log_var
-            # mu and log_var will be used as inputs for the Reparameterization Trick,
-            # generating latent vector z we need
-            # #####
+
             self.conv1 = nn.Sequential(
                 nn.Conv2d(self.in_channels, 4, kernel_size = 3, padding = 1),
                 nn.BatchNorm2d(4),
@@ -103,9 +78,6 @@ def main():
 
         
         def forward(self, x):
-            # #####
-            # TODO: Complete the encoder architecture to calculate mu and log_var
-            # #####
             x = self.conv1(x)
             x = self.conv2(x)
             x = self.conv3(x)
@@ -130,9 +102,6 @@ def main():
             self.latent_dim = latent_dim
             self.out_channels = out_channels
             
-            # #####
-            # TODO: Complete the decoder architecture to reconstruct image from latent vector z
-            # #####
             self.para_linear = nn.Linear(latent_dim, 1568, True)
 
             self.upconv1 = nn.Sequential(
@@ -209,9 +178,7 @@ def main():
             return z
 
         def forward(self, x, y = None):
-            # #####
-            # TODO: Complete forward for VAE
-            # #####
+
             """Forward for CVAE.
             Returns:
                 xg: reconstructed image from decoder.
@@ -227,9 +194,6 @@ def main():
             self,
             n_samples: int,
             ):
-            # #####
-            # TODO: Complete generate method for VAE
-            # #####
 
             """Randomly sample from the latent space and return
             the reconstructed samples.
@@ -242,9 +206,7 @@ def main():
             return self.forward(x)[0], None
 
 
-    # #####
-    # Wrapper for Conditional Variational Autoencoder
-    # #####
+
 
     class CVAE(nn.Module):
         def __init__(
@@ -258,10 +220,6 @@ def main():
             self.num_classes = num_classes
             self.img_size = img_size
 
-            # #####
-            # TODO: Insert additional layers here to encode class information
-            # Feel free to change parameters for encoder and decoder to suit your strategy
-            # #####
             self.encode_layer = nn.Linear(self.num_classes, self.img_size * self.img_size)
 
             self.encode = Encoder(latent_dim=latent_dim, in_channels=4)
@@ -280,10 +238,7 @@ def main():
             return z
 
         def forward(self, x, y):
-            # #####
-            # TODO: Complete forward for CVAE
-            # Note that you need to process label information HERE.
-            # #####
+
             """Forward for CVAE.
             Returns:
                 xg: reconstructed image from decoder.
@@ -308,9 +263,6 @@ def main():
             n_samples: int,
             y: torch.Tensor = None,
             ):
-            # #####
-            # TODO: Complete generate for CVAE
-            # #####
             """Randomly sample from the latent space and return
             the reconstructed samples.
             NOTE: Randomly generate some classes here, if not y is provided.
@@ -350,13 +302,11 @@ def main():
             return self.lambd * torch.mean(loss)
 
 
-    # -----
-    # Hyperparameters
+
     classes = ('plane', 'car', 'bird', 'cat',
             'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-    # NOTE: Feel free to change the hyperparameters as long as you meet the marking requirement
-    # NOTE: DO NOT TRAIN IT LONGER THAN 100 EPOCHS.
+
     batch_size = 256
     workers = 2
     latent_dim = 128
@@ -379,13 +329,11 @@ def main():
     ckpt_path = name + '.pt'
 
 
-    # TODO: Set up KL Annealing
+
     kl_annealing = [0, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4]      # KL Annealing
 
 
-    # -----
-    # Dataset
-    # NOTE: Data is only normalized to [0, 1]. THIS IS IMPORTANT!!!
+!
     tfms = transforms.Compose([
         transforms.ToTensor(),
         ])
@@ -432,9 +380,7 @@ def main():
 
     # -----
     # Losses
-    # #####
-    # TODO: Initialize your loss criterions HERE.
-    # #####
+
     l2loss = nn.MSELoss()
     bceloss = nn.BCELoss()
     ssimloss = SSIM()
@@ -450,8 +396,7 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    # To further help with training
-    # NOTE: You can remove this if you find this unhelpful
+
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer, [40, 50], gamma=0.1, verbose=False)
 
@@ -459,11 +404,8 @@ def main():
     # -----
     # Train loop
 
-    # #####
-    # TODO: Complete train_step for VAE/CVAE
-    # #####
 
-    def train_step(x, y): #remember to document
+    def train_step(x, y): 
         optimizer.zero_grad() #setting optimizer gradient to zero to compute new gradients for backwards
         output,mean_coding,log_var_coding, _ = model(x, y) # run image and classes in case of cvae to get respective output
         loss1 = l2loss(output, x) #l2loss
@@ -483,9 +425,7 @@ def main():
         Return:
             x_denormalized: denormalized image as numpy.uint8, in [0, 255].
         """
-        # #####
-        # TODO: Complete denormalization.
-        # #####
+
         x = torch.permute(x ,(0, 2, 3, 1))
         if device == "cuda:0":
             x = x.detach().cpu().numpy()
@@ -525,8 +465,6 @@ def main():
             # Loop through test set
             model.eval()
 
-            # TODO: Accumulate average reconstruction losses per sample individually for plotting
-            # Feel free to add code wherever you want to accumulate the loss
 
 
             with torch.no_grad():
@@ -554,8 +492,7 @@ def main():
                     k_lloss += loss4.cpu()
                     r_econloss += rcloss.cpu()
                     t_otalloss += rcloss.cpu() + loss4.cpu() 
-                    # TODO: Accumulate average reconstruction losses per batch individually for plotting
-                # dividing by the length of test/validation dataset to get my losses
+
                 l2_losses.append(l_2loss.item()/ len(test_dataset))
                 bce_losses.append(b_celoss.item()/ len(test_dataset))
                 ssim_losses.append(s_simloss.item()/ len(test_dataset))
@@ -627,10 +564,7 @@ def main():
                 plt.close('all')
                 print("Figure saved at epoch {}.".format(epoch))
 
-        # #####
-        # TODO: Complete KL-Annealing.
-        # #####
-        # KL Annealing
+
         # Adjust scalar for KL Divergence loss
         klloss.lambd = kl_annealing[math.floor(epoch/10)]
 
